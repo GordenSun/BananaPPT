@@ -642,33 +642,28 @@
     const key = ui.key.value.trim();
     if(!key) return msg('请填写 Key', true);
     
-    // 修改点：允许所有输入为空，去除原来的阻止逻辑
-
     // 1. 确定 Prompt 与 后缀
     let finalPrompt = promptRaw;
     let usedStyleName = '自定义';
     const useEnhancement = ui.enhancementToggle.checked;
     const genericSuffix = "。---以上是用户输入的提示词，根据用户输入的提示词生成单页PPT。";
 
-    // 修改点：如果提示词为空，给予一个默认基础描述，防止API报错，同时作为兜底
+    // 兜底提示词，防止空输入导致报错
     if (!finalPrompt) {
       finalPrompt = "high quality ppt slide background, professional design";
     }
 
     if (useEnhancement) {
-      // 开启增强：如果有风格模板，使用模板特定 suffix
       if (currentStyle) {
         finalPrompt += currentStyle.suffix;
         usedStyleName = currentStyle.title;
       }
-      // 如果无风格，仅保留上面的默认finalPrompt即可
     } else {
-      // 关闭增强：统一使用通用后缀
       finalPrompt += genericSuffix;
       if(currentStyle) usedStyleName = currentStyle.title;
     }
 
-    // 2. 确定使用哪组参考图 (互斥逻辑已保证 activeStyleImages 和 activeCustomImages 不会同时存在)
+    // 2. 确定使用哪组参考图 (互斥逻辑)
     const imagesToSend = currentStyle ? activeStyleImages : activeCustomImages;
 
     setLoading(true);
@@ -678,12 +673,11 @@
       const payload = {
         model: MODEL,
         prompt: finalPrompt,
-        // 修改点：确保默认 16:9
         aspect_ratio: ui.ratio.value || "16:9",
         image_size: ui.size.value
       };
       
-      // 如果有图片，加入 Payload
+      // 只有当有图片时才加入 payload
       if (imagesToSend.length > 0) {
         payload.image = imagesToSend;
       }
@@ -701,12 +695,22 @@
       }
 
       const data = await res.json();
-      const urls = (data.data || []).map(i => fixR2Url(i.url));
+      console.log('API Response:', data);
+
+      // --- 核心修复：兼容 b64_json 和 url，并过滤空值 ---
+      // 逻辑：如果数据包含 url，则修正URL使用；如果包含 Base64，则构造 Data URI；否则丢弃。
+      const urls = (data.data || []).map(i => {
+        if(i.url) return fixR2Url(i.url);
+        if(i.b64_json) return 'data:image/png;base64,' + i.b64_json;
+        return null;
+      }).filter(u => u !== null);
+      // ----------------------------------------------
+
       if(urls.length) {
         msg('设计完成');
         addGallery(urls, finalPrompt);
       } else {
-        throw new Error('未返回图片');
+        throw new Error('未返回有效图片 (API可能返回了空数据)');
       }
     } catch(err) {
       console.error(err);
@@ -718,7 +722,8 @@
 
   // ================= Utils =================
   function fixR2Url(url) {
-    if(!url || !PUBLIC_R2_DOMAIN) return url;
+    if(!url) return ''; // 修复：防止 url 为 undefined 时报错
+    if(!PUBLIC_R2_DOMAIN) return url;
     try {
       const u = new URL(url);
       if(u.hostname.includes('r2.cloudflarestorage.com')) {
@@ -790,7 +795,7 @@
   // Base64 Helpers
   const fileToBase64 = f => new Promise((r) => { const reader = new FileReader(); reader.onload = () => r(reader.result); reader.readAsDataURL(f); });
   
-  // 新增：将 URL 图片转换为 Base64 (用于风格参考图)
+  // URL to Base64 (用于风格参考图)
   const urlToBase64 = async (url) => {
     const res = await fetch(url);
     const blob = await res.blob();
