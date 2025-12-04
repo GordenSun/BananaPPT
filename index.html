@@ -191,7 +191,7 @@
       position: relative; background: #000; transition: 0.2s;
     }
     .img-card:hover { transform: translateY(-3px); border-color: var(--text-muted); }
-    .img-card img { height: 100%; width: auto; display: block; }
+    .img-card img { height: 100%; width: 100%; object-fit: contain; display: block; }
     .img-actions {
       position: absolute; inset: 0; background: rgba(0,0,0,0.6);
       display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -227,18 +227,18 @@
 <div class="app-layout">
   <!-- 左栏：资源选择 -->
   <aside class="panel col-left">
-    <div class="panel-header"><h2>1. 视觉参考 (Reference)</h2></div>
+    <div class="panel-header"><h2>1. 选择PPT风格</h2></div>
     <div class="panel-body">
       <div>
-        <div class="section-title">PPT 风格预设<span style="font-weight:normal; font-size:11px; opacity:0.7">点击加载参考库</span></div>
+        <div class="section-title">预设PPT风格<span style="font-weight:normal; font-size:11px; opacity:0.7"> </span></div>
         <div class="style-grid" id="styleList"></div>
       </div>
-      <div class="divider-text">- 或者 -</div>
+      <div class="divider-text">-- 或者在下方上传自己的风格参考图 --</div>
       <div>
-        <div class="section-title">自定义参考图<span style="font-weight:normal; font-size:11px; opacity:0.7">Logo/布局</span></div>
+        <div class="section-title">自定义参考图<span style="font-weight:normal; font-size:11px; opacity:0.7"> </span></div>
         <div class="upload-area" id="dropArea">
           <div style="font-size: 24px; margin-bottom: 8px; color: var(--text-muted);">+</div>
-          <div style="font-size: 12px; color: var(--text-muted);">点击或拖入图片<br>(自动取消风格)</div>
+          <div style="font-size: 12px; color: var(--text-muted);">点击或拖入图片，最多8张</div>
           <input id="fileInput" type="file" accept="image/*" multiple hidden>
         </div>
         <div id="thumbs" class="thumbs"></div>
@@ -248,27 +248,32 @@
 
   <!-- 中栏：控制台 -->
   <main class="panel col-center">
-    <div class="panel-header"><h2>2. 描述与配置 (Prompt)</h2></div>
+    <div class="panel-header"><h2>2. 输入PPT内容</h2></div>
     <div class="panel-body">
       <div>
-        <label>画面描述</label>
-        <textarea id="prompt" placeholder="例如：2025年战略规划，科技感数据大屏，深色背景..."></textarea>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
+          <label style="margin:0">输入提示词</label>
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:var(--text-muted)">
+            <input type="checkbox" id="enhancementToggle" checked> 提示词增强
+          </label>
+        </div>
+        <textarea id="prompt" placeholder="输入PPT的内容和风格要求。内容可以输入非常非常多的文字，2000字也完全没问题。如果输入的文字太少，AI会自动填充内容。风格可以使用文字描述，如果选择了风格或上传了参考图，不描述也没问题。"></textarea>
       </div>
       <div class="form-row">
         <div>
           <label>画幅比例</label>
           <select id="ratioSelect">
-            <option value="">auto (默认)</option>
-            <option value="16:9" selected>16:9 (PPT标准)</option>
-            <option value="4:3">4:3 (传统PPT)</option>
-            <option value="1:1">1:1 (正方形)</option>
-            <option value="9:16">9:16 (手机海报)</option>
+            <option value="">自动</option>
+            <option value="16:9" selected>16:9</option>
+            <option value="4:3">4:3</option>
+            <option value="1:1">1:1</option>
+            <option value="9:16">9:16</option>
             <option value="3:4">3:4</option>
             <option value="3:2">3:2</option>
             <option value="2:3">2:3</option>
             <option value="5:4">5:4</option>
             <option value="4:5">4:5</option>
-            <option value="21:9">21:9 (宽屏)</option>
+            <option value="21:9">21:9</option>
           </select>
         </div>
         <div>
@@ -283,7 +288,7 @@
       <div style="flex:1"></div> 
       <div class="status-bar" id="status"></div>
       <div class="key-section">
-        <div class="key-label">API Key (联系作者微信 <b>duge360</b> 获取)</div>
+        <div class="key-label">API Key (联系作者微信 <b>duge360</b> 购买，每次0.2元，价格可能变动)</div>
         <div class="key-input-row">
           <input type="text" id="userKey" placeholder="sk-..." style="height:34px;">
           <button class="btn-sm" id="saveKey">保存</button>
@@ -300,7 +305,7 @@
   <aside class="panel col-right">
     <div class="panel-header">
       <div style="display:flex; justify-content:space-between; align-items:center">
-        <h2>3. 生成结果 (History)</h2>
+        <h2>3. 生成结果</h2>
         <span style="font-size:12px; color:var(--text-muted)">预览/下载</span>
       </div>
     </div>
@@ -311,7 +316,7 @@
 <!-- Lightbox -->
 <div class="lightbox" id="lightbox">
   <div class="lb-header">
-    <span id="lbInfo">Preview</span>
+    <span id="lbInfo">预览</span>
     <span style="cursor:pointer" onclick="closeLightbox()">✕ 关闭</span>
   </div>
   <div class="lb-content" onclick="closeLightbox()">
@@ -331,46 +336,180 @@
   // ========================================================
   const PPT_STYLES = [
     {
-      id: 'tech_blue',
-      title: '科技商务',
-      preview: './styles/tech/preview.png', 
+      id: 'leader_love',
+      title: '领导最爱',
+      preview: './styles/leader_love/preview.png',
       refs: [
-          './styles/tech/ref1.png', 
-          './styles/tech/ref2.png',
-          './styles/tech/ref3.png', 
-          './styles/tech/ref4.png'
+        './styles/leader_love/ref1.png',
+        './styles/leader_love/ref2.png',
+        './styles/leader_love/ref3.png',
+        './styles/leader_love/ref4.png',
+        './styles/leader_love/ref5.png',
+        './styles/leader_love/ref6.png',
+        './styles/leader_love/ref7.png',
+        './styles/leader_love/ref8.png'
       ],
-      suffix: '。---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。'
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
     },
     {
-      id: 'minimal_white',
-      title: '极简白金',
-      preview: './styles/minimal/preview.jpg', 
+      id: 'data_vision',
+      title: '数据可视化',
+      preview: './styles/data_vision/preview.png',
       refs: [
-          './styles/minimal/ref1.jpg',
-          './styles/minimal/ref2.jpg'
+        './styles/data_vision/ref1.png',
+        './styles/data_vision/ref2.png',
+        './styles/data_vision/ref3.png',
+        './styles/data_vision/ref4.png',
+        './styles/data_vision/ref5.png',
+        './styles/data_vision/ref6.png',
+        './styles/data_vision/ref7.png',
+        './styles/data_vision/ref8.png'
       ],
-      suffix: ', (clean minimalist ppt slide:1.4), bright white office background, soft lighting, golden accent lines, vast negative space for text, professional'
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理，着重生成数据图表，要求数据准确、图表大气整齐。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
     },
     {
-      id: 'creative_gradient',
-      title: '创意渐变',
-      preview: './styles/creative/preview.jpg', 
+      id: 'work_result',
+      title: '工作汇报',
+      preview: './styles/work_result/preview.png',
       refs: [
-        './styles/creative/ref1.jpg'
+        './styles/work_result/ref1.png',
+        './styles/work_result/ref2.png',
+        './styles/work_result/ref3.png',
+        './styles/work_result/ref4.png',
+        './styles/work_result/ref5.png',
+        './styles/work_result/ref6.png',
+        './styles/work_result/ref7.png',
+        './styles/work_result/ref8.png'
       ],
-      suffix: ', (vibrant fluid gradient background:1.3), abstract shapes, colorful liquid mesh, modern art style, purple and pink hues, creative design'
-    },
-    {
-      id: 'china_red',
-      title: '国潮大气',
-      preview: './styles/china/preview.jpg', 
-      refs: [
-        './styles/china/ref1.jpg',
-        './styles/china/ref2.jpg'
-      ],
-      suffix: ', (Chinese traditional style:1.4), red and gold, mountains, clouds pattern, grand atmosphere, cultural heritage'
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
     }
+    {
+      id: 'red_blue_project,
+      title: '红蓝项目汇报',
+      preview: './styles/red_blue_project/preview.png',
+      refs: [
+        './styles/red_blue_project/ref1.png',
+        './styles/red_blue_project/ref2.png',
+        './styles/red_blue_project/ref3.png',
+        './styles/red_blue_project/ref4.png',
+        './styles/red_blue_project/ref5.png',
+        './styles/red_blue_project/ref6.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'red_grey_project',
+      title: '红灰项目汇报',
+      preview: './styles/red_grey_project/preview.png',
+      refs: [
+        './styles/red_grey_project/ref1.png',
+        './styles/red_grey_project/ref2.png',
+        './styles/red_grey_project/ref3.png',
+        './styles/red_grey_project/ref4.png',
+        './styles/red_grey_project/ref5.png',
+        './styles/red_grey_project/ref6.png',
+        './styles/red_grey_project/ref7.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'red_tech',
+      title: '红色科技',
+      preview: './styles/red_tech/preview.png',
+      refs: [
+        './styles/red_tech/ref1.png',
+        './styles/red_tech/ref2.png',
+        './styles/red_tech/ref3.png',
+        './styles/red_tech/ref4.png',
+        './styles/red_tech/ref5.png',
+        './styles/red_tech/ref6.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'scholar',
+      title: '学术',
+      preview: './styles/scholar/preview.png',
+      refs: [
+        './styles/scholar/ref1.png',
+        './styles/scholar/ref2.png',
+        './styles/scholar/ref3.png',
+        './styles/scholar/ref4.png',
+        './styles/scholar/ref5.png',
+        './styles/scholar/ref6.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'scholar_green',
+      title: '绿色学术',
+      preview: './styles/scholar_green/preview.png',
+      refs: [
+        './styles/scholar_green/ref1.png',
+        './styles/scholar_green/ref2.png',
+        './styles/scholar_green/ref3.png',
+        './styles/scholar_green/ref4.png',
+        './styles/scholar_green/ref5.png',
+        './styles/scholar_green/ref6.png',
+        './styles/scholar_green/ref7.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及紧凑的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'simple_business',
+      title: '简约商务',
+      preview: './styles/simple_business/preview.png',
+      refs: [
+        './styles/simple_business/ref1.png',
+        './styles/simple_business/ref2.png',
+        './styles/simple_business/ref3.png',
+        './styles/simple_business/ref4.png',
+        './styles/simple_business/ref5.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及简洁现代的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'simple_colorful',
+      title: '简约多彩',
+      preview: './styles/simple_colorful/preview.png',
+      refs: [
+        './styles/simple_colorful/ref1.png',
+        './styles/simple_colorful/ref2.png',
+        './styles/simple_colorful/ref3.png',
+        './styles/simple_colorful/ref4.png',
+        './styles/simple_colorful/ref5.png',
+        './styles/simple_colorful/ref6.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及简洁现代的布局，遵循最佳的平面设计原理。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'modern_illustration',
+      title: '现代插画',
+      preview: './styles/modern_illustration/preview.png',
+      refs: [
+        './styles/modern_illustration/ref1.png',
+        './styles/modern_illustration/ref2.png',
+        './styles/modern_illustration/ref3.png',
+        './styles/modern_illustration/ref4.png',
+        './styles/modern_illustration/ref5.png',
+        './styles/modern_illustration/ref6.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及宽松、简介的布局，遵循最佳的平面设计原理，配图是现代简约的插画风格。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
+    {
+      id: 'party1',
+      title: '党建红色',
+      preview: './styles/party1/preview.png',
+      refs: [
+        './styles/party1/ref1.png',
+        './styles/party1/ref2.png',
+        './styles/party1/ref3.png',
+        './styles/party1/ref4.png',
+        './styles/party1/ref5.png',
+        './styles/party1/ref6.png'
+      ],
+      suffix: '---以上是用户输入的生成PPT的提示词。以下是你要遵循的系统提示词：请帮用户生成PPT单页截图，用户会把这个图片直接插入到PPT里，如果用户没有说明，默认使用中文。你需要参考风格图的颜色与色彩风格，在此基础上结合用户输入的提示词生成PPT，用平面设计专家的角度，采用美观的图标以及简洁的布局，遵循最佳的平面设计原理，尤其侧重中国党建红色的风格。请你直接生成PPT单页截图，边缘不要有多余的边框或者是白边，4k分辨率。当前需要生成的页面内容：如果用户的提示词非常详实，直接使用用户提供的内容来生成PPT；如果用户的提示词过于简单，不足以生成紧凑、内容充实的PPT，请先使用你的专业知识完善PPT的主题内容，再生成最终的PPT。无论哪种场景，都要完全使用用户提供的数据和专业名词，不要自己编造数据。你需要返回3张图片，第1张是完整的PPT内容；第2张是PPT里所有的图像和背景图的组合，没有任何文字；第3张是PPT里的所有文字，透明背景。'
+    },
   ];
 
   // ================= 基础配置 =================
@@ -388,6 +527,7 @@
   // UI
   const ui = {
     prompt: document.getElementById('prompt'),
+    enhancementToggle: document.getElementById('enhancementToggle'),
     ratio: document.getElementById('ratioSelect'),
     size: document.getElementById('sizeSelect'),
     key: document.getElementById('userKey'),
@@ -475,7 +615,7 @@
     activeStyleImages = [];
     document.querySelectorAll('.style-card').forEach(c => c.classList.remove('active'));
 
-    if(activeCustomImages.length + list.length > 3) return msg('最多上传 3 张', true);
+    if(activeCustomImages.length + list.length > 8) return msg('最多上传 8 张', true);
     for(let f of list) {
       activeCustomImages.push(await fileToBase64(f));
     }
@@ -501,16 +641,31 @@
     const promptRaw = ui.prompt.value.trim();
     const key = ui.key.value.trim();
     if(!key) return msg('请填写 Key', true);
-    if(!promptRaw && !currentStyle && activeCustomImages.length === 0) return msg('请填写描述或选择一种参考', true);
+    
+    // 修改点：允许所有输入为空，去除原来的阻止逻辑
 
-    // 1. 确定 Prompt
+    // 1. 确定 Prompt 与 后缀
     let finalPrompt = promptRaw;
     let usedStyleName = '自定义';
-    if (currentStyle) {
-      finalPrompt += currentStyle.suffix;
-      usedStyleName = currentStyle.title;
-    } else if (!promptRaw && activeCustomImages.length > 0) {
-      finalPrompt = "high quality slide background";
+    const useEnhancement = ui.enhancementToggle.checked;
+    const genericSuffix = "。---以上是用户输入的提示词，根据用户输入的提示词生成单页PPT。";
+
+    // 修改点：如果提示词为空，给予一个默认基础描述，防止API报错，同时作为兜底
+    if (!finalPrompt) {
+      finalPrompt = "high quality ppt slide background, professional design";
+    }
+
+    if (useEnhancement) {
+      // 开启增强：如果有风格模板，使用模板特定 suffix
+      if (currentStyle) {
+        finalPrompt += currentStyle.suffix;
+        usedStyleName = currentStyle.title;
+      }
+      // 如果无风格，仅保留上面的默认finalPrompt即可
+    } else {
+      // 关闭增强：统一使用通用后缀
+      finalPrompt += genericSuffix;
+      if(currentStyle) usedStyleName = currentStyle.title;
     }
 
     // 2. 确定使用哪组参考图 (互斥逻辑已保证 activeStyleImages 和 activeCustomImages 不会同时存在)
@@ -523,6 +678,7 @@
       const payload = {
         model: MODEL,
         prompt: finalPrompt,
+        // 修改点：确保默认 16:9
         aspect_ratio: ui.ratio.value || "16:9",
         image_size: ui.size.value
       };
