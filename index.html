@@ -7,12 +7,51 @@
   <style>
     /* 保持您满意的 Vercel/Linear 风格 UI */
     :root {
+      /* =========================================================================
+         🎨 配色方案切换区
+         提示：将不需要的方案用注释包裹，保留一套方案即可。
+         ========================================================================= */
+
+      /* 👉 方案 1：原版科技蓝 (默认) - 经典深蓝，高亮青色 */
+      /*
       --bg-dark: #0f1525;
       --panel-bg: rgba(22, 28, 45, 0.6);
       --glass-border: rgba(255, 255, 255, 0.08);
       --accent: #00d2ff;
       --text-main: #e0e0e0;
       --text-muted: #8890a0;
+      */
+
+      /* 👉 方案 2：黑曜石金 (高端黑金) - 纯黑背景，奢华金色 */
+      
+      --bg-dark: #000000;
+      --panel-bg: rgba(20, 20, 20, 0.7);
+      --glass-border: rgba(255, 255, 255, 0.12);
+      --accent: #ffd700;
+      --text-main: #f5f5f5;
+      --text-muted: #999999;
+      
+
+      /* 👉 方案 3：赛博紫罗兰 (霓虹风格) - 深紫背景，玫红高亮 */
+      /*
+      --bg-dark: #0f0b1a;
+      --panel-bg: rgba(30, 20, 50, 0.5);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --accent: #d946ef;
+      --text-main: #fae8ff;
+      --text-muted: #a78bfa;
+      */
+
+      /* 👉 方案 4：黑客帝国绿 (极客风格) - 深墨绿背景，终端绿高亮 */
+      /*
+      --bg-dark: #02120a;
+      --panel-bg: rgba(10, 30, 20, 0.6);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --accent: #00ff9d;
+      --text-main: #e0fff4;
+      --text-muted: #5eead4;
+      */
+
       --radius: 12px;
     }
 
@@ -204,12 +243,13 @@
     }
     .action-btn:hover { background: var(--accent); color: #000; }
 
-    /* Lightbox */
+    /* Lightbox - 修正了显示比例问题 */
     .lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.95); display: none; flex-direction: column; }
     .lightbox.show { display: flex; }
     .lb-header { padding: 15px 20px; display: flex; justify-content: space-between; color: #aaa; }
-    .lb-content { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .lb-content img { max-width: 100%; max-height: 100%; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+    /* 修改：确保图片能完整显示，不裁剪，支持各种比例 */
+    .lb-content { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; overflow: hidden; width: 100%; height: 100%; }
+    .lb-content img { width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
     .lb-footer { padding: 20px; display: flex; justify-content: center; gap: 20px; }
     
     ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -225,7 +265,6 @@
 <body>
 
 <div class="app-layout">
-  <!-- 左栏：资源选择 -->
   <aside class="panel col-left">
     <div class="panel-header"><h2>1. 选择PPT风格</h2></div>
     <div class="panel-body">
@@ -246,7 +285,6 @@
     </div>
   </aside>
 
-  <!-- 中栏：控制台 -->
   <main class="panel col-center">
     <div class="panel-header"><h2>2. 输入PPT内容</h2></div>
     <div class="panel-body">
@@ -301,7 +339,6 @@
     </div>
   </main>
 
-  <!-- 右栏：画廊 -->
   <aside class="panel col-right">
     <div class="panel-header">
       <div style="display:flex; justify-content:space-between; align-items:center">
@@ -313,7 +350,6 @@
   </aside>
 </div>
 
-<!-- Lightbox -->
 <div class="lightbox" id="lightbox">
   <div class="lb-header">
     <span id="lbInfo">预览</span>
@@ -546,12 +582,12 @@
 
   ui.key.value = localStorage.getItem(STORE_KEY) || '';
 
-  // 渲染风格列表
+  // 渲染风格列表，修改了图标
   ui.styleList.innerHTML = PPT_STYLES.map(s => `
     <div class="style-card" id="style-${s.id}" onclick="selectStyle('${s.id}')">
       <img src="${s.preview}" onerror="this.src='https://placehold.co/300x168/222/999?text=${s.title}'">
       <div class="style-actions">
-        <div class="icon-btn" onclick="event.stopPropagation(); viewLarge('${s.preview}')" title="查看预览大图">🔍</div>
+        <div class="icon-btn" onclick="event.stopPropagation(); viewLarge('${s.preview}')" title="查看预览大图">⤢</div>
       </div>
       <div class="style-name">${s.title}</div>
     </div>
@@ -639,6 +675,11 @@
     const promptRaw = ui.prompt.value.trim();
     const key = ui.key.value.trim();
     if(!key) return msg('请填写 Key', true);
+    
+    // 增加校验逻辑：必须选择风格或上传图片
+    if (!currentStyle && activeCustomImages.length === 0) {
+      return msg('请选择风格或上传参考风格', true);
+    }
     
     // 1. 确定 Prompt 与 后缀
     let finalPrompt = promptRaw;
