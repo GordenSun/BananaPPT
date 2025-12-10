@@ -1151,7 +1151,7 @@
       const MODEL = 'nano-banana-2';
       const STORE_KEY = 'nb_ppt_v3:key';
       const HISTORY_KEY = 'nb_ppt_v3:history'; // 历史记录存储 key
-      const POLL_INTERVAL = 5000; // 轮询间隔 3 秒
+      const POLL_INTERVAL = 3000; // 轮询间隔 3 秒
       const MAX_POLL_ATTEMPTS = 120; // 最大轮询次数 (6分钟)
 
       // 状态变量
@@ -1533,12 +1533,14 @@
               return { success: true, urls: [] };
             }
 
-            if (status === 'FAILED' || status === 'ERROR' || status === 'FAILURE') {
+            if (status === 'FAILED' || status === 'FAILURE') {
               addHistoryItem(taskId, 'failed', []);
               throw new Error(data.fail_reason || data.message || data.error || '任务失败');
             }
 
-            // 任务仍在处理中
+            // 任务仍在处理中（NOT_START, PENDING, PROCESSING, RUNNING等）
+            // 更新状态为pending
+            addHistoryItem(taskId, 'pending', []);
             const progress = data.progress || '';
             if (!silent) msg(`正在生成中... ${progress} (${attempts}/${maxAttempts})`);
 
