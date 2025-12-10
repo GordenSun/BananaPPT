@@ -668,8 +668,8 @@
     const maxRetries = 60; // 120秒超时
     
     for (let i = 0; i < maxRetries; i++) {
-      await new Promise(r => setTimeout(r, 2000)); // 等待 2 秒
-      msg(`AI正在绘图... (${i * 2 + 2}s)`);
+      await new Promise(r => setTimeout(r, 10000)); // 等待 10 秒
+      msg(`AI正在绘图... (${i * 10 + 10}s)`);
 
       const res = await fetch(pollUrl, {
         method: 'GET',
