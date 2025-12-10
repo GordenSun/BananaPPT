@@ -1410,48 +1410,87 @@
             if (!res.ok) {
               let errStr = `Error ${res.status}`;
               try { const j = await res.json(); if (j.error && j.error.message) errStr = j.error.message; } catch (e) { }
+              // 如果是404可能任务还没准备好，继续轮询
+              if (res.status === 404 && attempts < maxAttempts) {
+                msg(`正在生成中... (${attempts}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+                continue;
+              }
               throw new Error(errStr);
             }
 
             const data = await res.json();
-            console.log(`轮询第 ${attempts} 次, 结果:`, data);
+            console.log(`轮询第 ${attempts} 次, 完整响应:`, JSON.stringify(data, null, 2));
 
-            // 检查任务状态
-            if (data.data && data.data.length > 0) {
-              // 任务完成，提取图片 URL
-              const urls = data.data.map(i => {
+            // 尝试多种方式提取图片URL
+            let urls = [];
+
+            // 方式1: data.data.data 嵌套结构 (实际API格式)
+            if (data.data && data.data.data && Array.isArray(data.data.data) && data.data.data.length > 0) {
+              urls = data.data.data.map(i => {
                 if (i.url) return fixR2Url(i.url);
                 if (i.b64_json) return 'data:image/png;base64,' + i.b64_json;
                 return null;
               }).filter(u => u !== null);
-
-              if (urls.length > 0) {
-                addHistoryItem(taskId, 'completed', urls);
-                return { success: true, urls };
-              }
+              console.log('从 data.data.data 提取到URL:', urls);
             }
 
-            // 检查是否有明确的状态字段
-            if (data.status === 'completed' || data.status === 'success') {
-              const urls = (data.data || []).map(i => {
+            // 方式2: data.data 是数组 (flat结构)
+            if (urls.length === 0 && data.data && Array.isArray(data.data) && data.data.length > 0) {
+              urls = data.data.map(i => {
                 if (i.url) return fixR2Url(i.url);
                 if (i.b64_json) return 'data:image/png;base64,' + i.b64_json;
                 return null;
               }).filter(u => u !== null);
+              console.log('从 data.data 提取到URL:', urls);
+            }
+
+            // 方式3: data 直接包含 url
+            if (urls.length === 0 && data.url) {
+              urls = [fixR2Url(data.url)];
+            }
+
+            // 如果找到图片URL，任务完成
+            if (urls.length > 0) {
+              console.log('成功找到图片URL:', urls);
               addHistoryItem(taskId, 'completed', urls);
               return { success: true, urls };
             }
 
-            if (data.status === 'failed' || data.status === 'error') {
-              addHistoryItem(taskId, 'failed', []);
-              throw new Error(data.message || '任务失败');
+            // 检查明确的状态字段 (支持大小写)
+            const status = (data.status || data.state || data.task_status || '').toUpperCase();
+            console.log('任务状态:', status);
+
+            if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'DONE' || status === 'FINISHED') {
+              // 状态显示完成但没有找到图片，可能需要再查一次
+              console.warn('状态显示完成但未找到图片URL，原始数据:', data);
+              // 尝试最后一次深度解析
+              if (data.data && typeof data.data === 'object') {
+                // 可能有其他嵌套方式
+                const nestedData = data.data;
+                if (nestedData.url) {
+                  urls = [fixR2Url(nestedData.url)];
+                }
+              }
+              if (urls.length > 0) {
+                addHistoryItem(taskId, 'completed', urls);
+                return { success: true, urls };
+              }
+              addHistoryItem(taskId, 'completed', []);
+              return { success: true, urls: [] };
             }
 
-            // 任务仍在处理中，更新状态
-            msg(`正在生成中... (${attempts}/${maxAttempts})`);
-            addHistoryItem(taskId, 'pending', []);
+            if (status === 'FAILED' || status === 'ERROR' || status === 'FAILURE') {
+              addHistoryItem(taskId, 'failed', []);
+              throw new Error(data.fail_reason || data.message || data.error || '任务失败');
+            }
+
+            // 任务仍在处理中
+            const progress = data.progress || '';
+            msg(`正在生成中... ${progress} (${attempts}/${maxAttempts})`);
 
           } catch (err) {
+            console.error(`轮询失败 (尝试 ${attempts}):`, err);
             if (attempts >= maxAttempts) {
               addHistoryItem(taskId, 'failed', []);
               throw err;
