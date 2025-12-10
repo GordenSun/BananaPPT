@@ -1151,7 +1151,7 @@
       const MODEL = 'nano-banana-2';
       const STORE_KEY = 'nb_ppt_v3:key';
       const HISTORY_KEY = 'nb_ppt_v3:history'; // 历史记录存储 key
-      const POLL_INTERVAL = 3000; // 轮询间隔 3 秒
+      const POLL_INTERVAL = 5000; // 轮询间隔 3 秒
       const MAX_POLL_ATTEMPTS = 120; // 最大轮询次数 (6分钟)
 
       // 状态变量
@@ -1330,14 +1330,32 @@
         } else {
           ui.historyList.innerHTML = pageItems.map(item => {
             const time = new Date(item.createdAt).toLocaleString();
-            // 只有真正完成的才显示completed，其他都当作可刷新
+            // 区分状态：completed, pending, timeout(可刷新), failed(真正失败，不可刷新)
             const isCompleted = item.status === 'completed' && item.imageUrls && item.imageUrls.length > 0;
-            const statusClass = isCompleted ? 'completed' : (item.status === 'failed' ? 'pending' : 'pending');
-            const statusText = isCompleted ? '已完成' : (item.status === 'failed' ? '超时(可刷新)' : '处理中...');
+            const isRealFailed = item.status === 'failed';  // 真正的API失败
+            const isTimeout = item.status === 'timeout';     // 本地轮询超时
+            const isPending = item.status === 'pending';
+
+            let statusClass, statusText;
+            if (isCompleted) {
+              statusClass = 'completed';
+              statusText = '已完成';
+            } else if (isRealFailed) {
+              statusClass = 'failed';
+              statusText = '已失败';
+            } else if (isTimeout) {
+              statusClass = 'pending';
+              statusText = '超时(可刷新)';
+            } else {
+              statusClass = 'pending';
+              statusText = '处理中...';
+            }
+
             const hasImages = item.imageUrls && item.imageUrls.length > 0;
+            const canRefresh = !isCompleted && !isRealFailed;  // 只有pending和timeout可刷新
             const thumbHtml = hasImages
               ? `<img src="${item.imageUrls[0]}" loading="lazy">`
-              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:12px;">等待结果...</div>';
+              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:12px;">' + (isRealFailed ? '生成失败' : '等待结果...') + '</div>';
 
             return `
               <div class="history-item" data-task-id="${item.taskId}">
@@ -1348,7 +1366,7 @@
                   <div class="history-item-status ${statusClass}">${statusText}</div>
                 </div>
                 <div class="history-item-actions">
-                  ${!isCompleted ? `<button class="history-btn" onclick="refreshHistoryItem('${item.taskId}')">刷新</button>` : ''}
+                  ${canRefresh ? `<button class="history-btn" onclick="refreshHistoryItem('${item.taskId}')">刷新</button>` : ''}
                   ${hasImages ? `<button class="history-btn" onclick="viewHistoryImages('${item.taskId}')">查看</button>` : ''}
                 </div>
               </div>
@@ -1392,7 +1410,8 @@
         if (!key) return msg('请填写 Key', true);
 
         try {
-          const result = await pollTaskStatus(taskId, key, 1); // 只查询一次
+          // 使用静默模式，不更新主界面状态栏
+          const result = await pollTaskStatus(taskId, key, 1, true);
           renderHistoryList();
         } catch (e) {
           console.error('刷新失败:', e);
@@ -1416,7 +1435,7 @@
       };
 
       // ================= 异步任务轮询 =================
-      async function pollTaskStatus(taskId, key, maxAttempts = MAX_POLL_ATTEMPTS) {
+      async function pollTaskStatus(taskId, key, maxAttempts = MAX_POLL_ATTEMPTS, silent = false) {
         let attempts = 0;
 
         while (attempts < maxAttempts) {
@@ -1433,7 +1452,7 @@
               try { const j = await res.json(); if (j.error && j.error.message) errStr = j.error.message; } catch (e) { }
               // 如果是404可能任务还没准备好，继续轮询
               if (res.status === 404 && attempts < maxAttempts) {
-                msg(`正在生成中... (${attempts}/${maxAttempts})`);
+                if (!silent) msg(`正在生成中... (${attempts}/${maxAttempts})`);
                 await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
                 continue;
               }
@@ -1521,12 +1540,13 @@
 
             // 任务仍在处理中
             const progress = data.progress || '';
-            msg(`正在生成中... ${progress} (${attempts}/${maxAttempts})`);
+            if (!silent) msg(`正在生成中... ${progress} (${attempts}/${maxAttempts})`);
 
           } catch (err) {
             console.error(`轮询失败 (尝试 ${attempts}):`, err);
             if (attempts >= maxAttempts) {
-              addHistoryItem(taskId, 'failed', []);
+              // 这里是请求失败，不是API返回失败，用timeout状态
+              addHistoryItem(taskId, 'timeout', []);
               throw err;
             }
           }
@@ -1536,9 +1556,10 @@
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
           }
         }
-
-        addHistoryItem(taskId, 'failed', []);
-        throw new Error('轮询超时，请稍后在历史记录中查看');
+        // 本地轮询超时，使用timeout状态（可刷新）
+        addHistoryItem(taskId, 'timeout', []);
+        if (!silent) throw new Error('轮询超时，请稍后在历史记录中刷新查看');
+        return { success: false, urls: [] };
       }
 
       // ================= 核心生成 =================
