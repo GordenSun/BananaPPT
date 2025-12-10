@@ -601,22 +601,35 @@
       color: var(--accent);
     }
 
-    /* History Button */
+    /* History Button - Fixed position aligned with panel header */
     .btn-history {
-      background: rgba(255, 255, 255, 0.1);
+      position: fixed;
+      top: 31px;
+      right: 31px;
+      background: rgba(0, 0, 0, 0.75);
       border: 1px solid var(--glass-border);
       color: var(--text-muted);
-      padding: 4px 10px;
-      border-radius: 4px;
-      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
       cursor: pointer;
       transition: 0.2s;
+      z-index: 50;
+      backdrop-filter: blur(6px);
     }
 
     .btn-history:hover {
       background: var(--accent);
       color: #000;
       border-color: var(--accent);
+    }
+
+    @media (max-width: 800px) {
+      .btn-history {
+        top: auto;
+        bottom: 80px;
+        right: 16px;
+      }
     }
 
     /* History Modal */
@@ -912,17 +925,14 @@
 
     <aside class="panel col-right">
       <div class="panel-header">
-        <div style="display:flex; justify-content:space-between; align-items:center">
-          <h2>3. 生成结果</h2>
-          <div style="display:flex; gap:8px; align-items:center">
-            <button class="btn-history" onclick="openHistory()">📋 历史记录</button>
-            <span style="font-size:12px; color:var(--text-muted)">预览/下载</span>
-          </div>
-        </div>
+        <h2>3. 生成结果</h2>
       </div>
       <div class="panel-body" id="gallery"></div>
     </aside>
   </div>
+
+  <!-- Fixed History Button -->
+  <button class="btn-history" onclick="openHistory()">📋 历史</button>
 
   <div class="lightbox" id="lightbox">
     <div class="lb-header">
@@ -1149,6 +1159,7 @@
       let activeStyleImages = [];    // 选中风格自动加载的 (Base64)
       let currentStyle = null;       // 当前选中风格对象
       let lbUrl = '';
+      let viewingFromHistory = false;  // 标记是否从历史记录查看大图
       let historyPage = 1;           // 当前历史页码
       const historyPerPage = 10;     // 每页显示数量
 
@@ -1389,8 +1400,15 @@
         const history = loadHistory();
         const item = history.find(h => h.taskId === taskId);
         if (item && item.imageUrls && item.imageUrls.length > 0) {
-          closeHistory();
-          viewLarge(item.imageUrls[0], true);
+          // 设置标记，表示从历史记录打开
+          viewingFromHistory = true;
+          // 先隐藏历史弹窗（不关闭，这样关闭大图时可以返回）
+          ui.historyModal.style.visibility = 'hidden';
+          // 直接设置大图URL，不使用gallery的图片索引
+          lbUrl = item.imageUrls[0];
+          ui.lbImg.src = lbUrl;
+          ui.lb.classList.add('show');
+          ui.lbDownBtn.style.display = 'block';
         }
       };
 
@@ -1689,18 +1707,29 @@
 
       // Lightbox
       window.viewLarge = (url, showDownload = false) => {
+        viewingFromHistory = false;  // 从图库查看时重置标记
         lbUrl = url;
         ui.lbImg.src = url;
         ui.lb.classList.add('show');
         ui.lbDownBtn.style.display = showDownload ? 'block' : 'none';
       };
-      window.closeLightbox = () => ui.lb.classList.remove('show');
+      window.closeLightbox = () => {
+        ui.lb.classList.remove('show');
+        // 如果是从历史记录打开的，关闭大图后返回历史列表
+        if (viewingFromHistory) {
+          viewingFromHistory = false;
+          ui.historyModal.style.visibility = 'visible';
+        }
+      };
 
       // ESC 键关闭 Lightbox 和 History Modal
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-          closeLightbox();
-          closeHistory();
+          if (ui.lb.classList.contains('show')) {
+            closeLightbox();
+          } else {
+            closeHistory();
+          }
         }
       });
 
