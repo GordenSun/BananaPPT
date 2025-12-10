@@ -655,6 +655,62 @@
 
   window.removeThumb = (i) => { event.stopPropagation(); activeCustomImages.splice(i, 1); renderThumbs(); };
 
+  // ================= 异步轮询工具函数 =================
+  async function pollTaskResult(taskId, key) {
+    const pollUrl = `https://hk-api.gptbest.vip/v1/images/tasks/${taskId}`;
+    const maxRetries = 60; // 最大轮询次数 (60次 * 8秒 = 480秒超时)
+    
+    for (let i = 0; i < maxRetries; i++) {
+      // 1. 等待 8 秒
+      await new Promise(r => setTimeout(r, 2000));
+      
+      // 更新状态提示
+      msg(`正在生成中... (${i + 1}s)`);
+
+      // 2. 查询任务状态
+      const res = await fetch(pollUrl, {
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': 'Bearer ' + key 
+        }
+      });
+
+      if (!res.ok) {
+        // 如果查询报错（非404），继续重试或抛出
+        if (res.status === 404) throw new Error('任务 ID 无效或已过期');
+        console.warn('轮询网络错误，继续重试...', res.status);
+        continue; 
+      }
+
+      const data = await res.json();
+      console.log('Poll Status:', data);
+
+      // 3. 判断任务状态
+      // 兼容常见的几种状态字段：status, task_status, state
+      const status = (data.status || data.task_status || data.state || '').toUpperCase();
+
+      // 情况 A: 任务成功 (状态为 SUCCEEDED 或 SUCCESS)
+      if (status === 'SUCCEEDED' || status === 'SUCCESS') {
+        return data; // 返回包含最终图片数据的对象
+      }
+      
+      // 情况 B: 任务失败
+      if (status === 'FAILED' || status === 'ERROR') {
+        throw new Error(data.error || data.message || '生成任务失败');
+      }
+
+      // 情况 C: 如果 API 没有 status 字段，直接返回了 data 数组包含 url，也视为成功
+      // (有些接口完成后直接返回跟同步接口一样的结构)
+      if (data.data && Array.isArray(data.data) && data.data.length > 0 && data.data[0].url) {
+        return data; 
+      }
+
+      // 情况 D: 仍在处理中 (PROCESSING, PENDING, QUEUED...) -> 继续下一次循环
+    }
+
+    throw new Error('等待生成结果超时，请稍后重试');
+  }
 
   // ================= 核心生成 =================
   ui.saveKey.onclick = () => { localStorage.setItem(STORE_KEY, ui.key.value.trim()); msg('Key 已保存'); };
@@ -664,7 +720,7 @@
     const key = ui.key.value.trim();
     if(!key) return msg('请填写 Key', true);
     
-    // 增加校验逻辑：必须选择风格或上传图片
+    // 校验逻辑
     if (!currentStyle && activeCustomImages.length === 0) {
       return msg('请选择风格或上传参考风格', true);
     }
@@ -675,10 +731,7 @@
     const useEnhancement = ui.enhancementToggle.checked;
     const genericSuffix = "。---以上是用户输入的提示词，根据用户输入的提示词生成单页PPT。";
 
-    // 兜底提示词，防止空输入导致报错
-    if (!finalPrompt) {
-      finalPrompt = "high quality ppt slide background, professional design";
-    }
+    if (!finalPrompt) finalPrompt = "high quality ppt slide background, professional design";
 
     if (useEnhancement) {
       if (currentStyle) {
@@ -690,55 +743,71 @@
       if(currentStyle) usedStyleName = currentStyle.title;
     }
 
-    // 2. 确定使用哪组参考图 (互斥逻辑)
+    // 2. 确定使用哪组参考图
     const imagesToSend = currentStyle ? activeStyleImages : activeCustomImages;
 
     setLoading(true);
-    msg(`正在设计 [${usedStyleName}] 风格PPT`);
+    msg(`已提交任务 [${usedStyleName}]，正在排队...`);
 
     try {
       const payload = {
         model: MODEL,
         prompt: finalPrompt,
         aspect_ratio: ui.ratio.value || "16:9",
-        image_size: ui.size.value
+        image_size: ui.size.value // 现在可以放心选 4K 了
       };
       
-      // 只有当有图片时才加入 payload
       if (imagesToSend.length > 0) {
         payload.image = imagesToSend;
       }
 
-      const res = await fetch(ENDPOINT, {
+      // ==========================================
+      // 🔥 阶段一：提交异步任务 (加上 async=true)
+      // ==========================================
+      const submitRes = await fetch(ENDPOINT + '?async=true', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
         body: JSON.stringify(payload)
       });
 
-      if(!res.ok) {
-        let errStr = `Error ${res.status}`;
-        try { const j = await res.json(); if(j.error && j.error.message) errStr = j.error.message; } catch(e){}
+      if(!submitRes.ok) {
+        let errStr = `Error ${submitRes.status}`;
+        try { const j = await submitRes.json(); if(j.error && j.error.message) errStr = j.error.message; } catch(e){}
         throw new Error(errStr);
       }
 
-      const data = await res.json();
-      console.log('API Response:', data);
+      const submitData = await submitRes.json();
+      console.log('Task Submitted:', submitData);
 
-      // --- 核心修复：兼容 b64_json 和 url，并过滤空值 ---
-      // 逻辑：如果数据包含 url，则修正URL使用；如果包含 Base64，则构造 Data URI；否则丢弃。
-      const urls = (data.data || []).map(i => {
+      // 获取 task_id (兼容 {task_id: "..."} 和 {data: {task_id: "..."}})
+      const taskId = submitData.task_id || (submitData.data && submitData.data.task_id);
+
+      if (!taskId) {
+        throw new Error('API 未返回 Task ID，无法进行异步查询');
+      }
+
+      // ==========================================
+      // 🔥 阶段二：轮询查询结果
+      // ==========================================
+      msg('任务处理中，请勿关闭...');
+      
+      // 调用我们在上面定义的轮询函数
+      const resultData = await pollTaskResult(taskId, key);
+
+      // 处理最终结果 (逻辑同之前)
+      const urls = (resultData.data || []).map(i => {
         if(i.url) return fixR2Url(i.url);
         if(i.b64_json) return 'data:image/png;base64,' + i.b64_json;
         return null;
       }).filter(u => u !== null);
-      // ----------------------------------------------
 
       if(urls.length) {
-        msg('设计完成');
+        msg('生成完成！');
         addGallery(urls, finalPrompt);
       } else {
-        throw new Error('未返回有效图片 (API可能返回了空数据)');
+        throw new Error('任务完成但未返回图片数据');
       }
+
     } catch(err) {
       console.error(err);
       msg(err.message, true);
