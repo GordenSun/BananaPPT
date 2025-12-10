@@ -1316,12 +1316,18 @@
       function addHistoryItem(taskId, status = 'pending', imageUrls = [], prompt = '') {
         const history = loadHistory();
         const existingIndex = history.findIndex(h => h.taskId === taskId);
+        const existing = existingIndex >= 0 ? history[existingIndex] : null;
+
+        // 保留已有数据：如果新传入的是空值，则使用旧值
+        const finalImageUrls = imageUrls.length > 0 ? imageUrls : (existing?.imageUrls || []);
+        const finalPrompt = prompt || (existing?.prompt || '');
+
         const item = {
           taskId,
           status,
-          imageUrls,
-          prompt,
-          createdAt: existingIndex >= 0 ? history[existingIndex].createdAt : new Date().toISOString(),
+          imageUrls: finalImageUrls,
+          prompt: finalPrompt,
+          createdAt: existing ? existing.createdAt : new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
         if (existingIndex >= 0) {
@@ -1346,14 +1352,40 @@
         } else {
           ui.historyList.innerHTML = pageItems.map(item => {
             const time = new Date(item.createdAt).toLocaleString();
-            // 只有真正完成的才显示completed，其他都当作可刷新
+            // 区分状态：completed, pending, timeout(可刷新), failed(真正失败), rejected(审核未通过)
             const isCompleted = item.status === 'completed' && item.imageUrls && item.imageUrls.length > 0;
-            const statusClass = isCompleted ? 'completed' : (item.status === 'failed' ? 'pending' : 'pending');
-            const statusText = isCompleted ? '已完成' : (item.status === 'failed' ? '超时(可刷新)' : '处理中...');
+            const isRealFailed = item.status === 'failed';  // 真正的API失败
+            const isRejected = item.status === 'rejected';  // 成功但无图片（审核）
+            const isTimeout = item.status === 'timeout';     // 本地轮询超时
+            const isPending = item.status === 'pending';
+
+            let statusClass, statusText;
+            if (isCompleted) {
+              statusClass = 'completed';
+              statusText = '已完成';
+            } else if (isRealFailed) {
+              statusClass = 'failed';
+              statusText = '已失败';
+            } else if (isRejected) {
+              statusClass = 'pending';  // 用pending样式，因为可以刷新
+              statusText = '无图片(审核)';
+            } else if (isTimeout) {
+              statusClass = 'pending';
+              statusText = '超时(可刷新)';
+            } else {
+              statusClass = 'pending';
+              statusText = '处理中...';
+            }
+
             const hasImages = item.imageUrls && item.imageUrls.length > 0;
+            // 除了已完成的，其他状态都可以刷新（包括失败的）
+            const canRefresh = !isCompleted;
+            let thumbText = '等待结果...';
+            if (isRealFailed) thumbText = '生成失败';
+            if (isRejected) thumbText = '审核未通过';
             const thumbHtml = hasImages
               ? `<img src="${item.imageUrls[0]}" loading="lazy">`
-              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:12px;">等待结果...</div>';
+              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:12px;">' + thumbText + '</div>';
 
             return `
               <div class="history-item" data-task-id="${item.taskId}">
@@ -1364,7 +1396,7 @@
                   <div class="history-item-status ${statusClass}">${statusText}</div>
                 </div>
                 <div class="history-item-actions">
-                  ${!isCompleted ? `<button class="history-btn" onclick="refreshHistoryItem('${item.taskId}')">刷新</button>` : ''}
+                  ${canRefresh ? `<button class="history-btn" onclick="refreshHistoryItem('${item.taskId}')">刷新</button>` : ''}
                   ${hasImages ? `<button class="history-btn" onclick="viewHistoryImages('${item.taskId}')">查看</button>` : ''}
                 </div>
               </div>
@@ -1408,7 +1440,8 @@
         if (!key) return msg('请填写 Key', true);
 
         try {
-          const result = await pollTaskStatus(taskId, key, 1); // 只查询一次
+          // 使用静默模式，不更新主界面状态栏
+          const result = await pollTaskStatus(taskId, key, 1, true);
           renderHistoryList();
         } catch (e) {
           console.error('刷新失败:', e);
@@ -1432,7 +1465,7 @@
       };
 
       // ================= 异步任务轮询 =================
-      async function pollTaskStatus(taskId, key, maxAttempts = MAX_POLL_ATTEMPTS) {
+      async function pollTaskStatus(taskId, key, maxAttempts = MAX_POLL_ATTEMPTS, silent = false) {
         let attempts = 0;
 
         while (attempts < maxAttempts) {
@@ -1449,7 +1482,7 @@
               try { const j = await res.json(); if (j.error && j.error.message) errStr = j.error.message; } catch (e) { }
               // 如果是404可能任务还没准备好，继续轮询
               if (res.status === 404 && attempts < maxAttempts) {
-                msg(`正在生成中... (${attempts}/${maxAttempts})`);
+                if (!silent) msg(`正在生成中... (${attempts}/${maxAttempts})`);
                 await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
                 continue;
               }
@@ -1500,49 +1533,52 @@
               urls = [fixR2Url(data.url)];
             }
 
-            // 如果找到图片URL，任务完成
-            if (urls.length > 0) {
-              console.log('成功找到图片URL:', urls);
+            // ========== 状态检测（优先检查status字段）==========
+            // API响应可能是 data.status 或 data.data.status
+            const status = (data.status || data.data?.status || '').toUpperCase();
+            console.log('任务状态:', status, '图片数量:', urls.length);
+
+            // 1. 明确失败：只有 FAILURE 才算真正失败
+            if (status === 'FAILURE') {
+              addHistoryItem(taskId, 'failed', []);
+              throw new Error(data.fail_reason || '任务失败');
+            }
+
+            // 2. 明确成功：SUCCESS/COMPLETED/DONE/FINISHED
+            if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'DONE' || status === 'FINISHED') {
+              // 尝试从更多地方提取图片URL
+              if (urls.length === 0 && data.data && typeof data.data === 'object' && data.data.url) {
+                urls = [fixR2Url(data.data.url)];
+              }
+              console.log('任务成功，最终图片URL:', urls);
+
+              // 如果成功但没有图片，通常是因为内容审核
+              if (urls.length === 0) {
+                addHistoryItem(taskId, 'rejected', []);
+                return { success: true, urls: [], rejected: true };
+              }
+
               addHistoryItem(taskId, 'completed', urls);
               return { success: true, urls };
             }
 
-            // 检查明确的状态字段 (支持大小写)
-            const status = (data.status || data.state || data.task_status || '').toUpperCase();
-            console.log('任务状态:', status);
-
-            if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'DONE' || status === 'FINISHED') {
-              // 状态显示完成但没有找到图片，可能需要再查一次
-              console.warn('状态显示完成但未找到图片URL，原始数据:', data);
-              // 尝试最后一次深度解析
-              if (data.data && typeof data.data === 'object') {
-                // 可能有其他嵌套方式
-                const nestedData = data.data;
-                if (nestedData.url) {
-                  urls = [fixR2Url(nestedData.url)];
-                }
-              }
-              if (urls.length > 0) {
-                addHistoryItem(taskId, 'completed', urls);
-                return { success: true, urls };
-              }
-              addHistoryItem(taskId, 'completed', []);
-              return { success: true, urls: [] };
+            // 3. 如果已经找到图片URL，也算成功
+            if (urls.length > 0) {
+              console.log('找到图片URL，标记为成功:', urls);
+              addHistoryItem(taskId, 'completed', urls);
+              return { success: true, urls };
             }
 
-            if (status === 'FAILED' || status === 'ERROR' || status === 'FAILURE') {
-              addHistoryItem(taskId, 'failed', []);
-              throw new Error(data.fail_reason || data.message || data.error || '任务失败');
-            }
-
-            // 任务仍在处理中
+            // 4. 其他状态（NOT_START, PENDING, PROCESSING, RUNNING, QUEUED 等）都算处理中
+            addHistoryItem(taskId, 'pending', []);
             const progress = data.progress || '';
-            msg(`正在生成中... ${progress} (${attempts}/${maxAttempts})`);
+            if (!silent) msg(`正在生成中... ${status} ${progress} (${attempts}/${maxAttempts})`);
 
           } catch (err) {
             console.error(`轮询失败 (尝试 ${attempts}):`, err);
             if (attempts >= maxAttempts) {
-              addHistoryItem(taskId, 'failed', []);
+              // 这里是请求失败，不是API返回失败，用timeout状态
+              addHistoryItem(taskId, 'timeout', []);
               throw err;
             }
           }
@@ -1552,9 +1588,10 @@
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
           }
         }
-
-        addHistoryItem(taskId, 'failed', []);
-        throw new Error('轮询超时，请稍后在历史记录中查看');
+        // 本地轮询超时，使用timeout状态（可刷新）
+        addHistoryItem(taskId, 'timeout', []);
+        if (!silent) throw new Error('轮询超时，请稍后在历史记录中刷新查看');
+        return { success: false, urls: [] };
       }
 
       // ================= 核心生成 =================
