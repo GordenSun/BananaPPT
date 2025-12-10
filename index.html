@@ -1151,7 +1151,7 @@
       const MODEL = 'nano-banana-2';
       const STORE_KEY = 'nb_ppt_v3:key';
       const HISTORY_KEY = 'nb_ppt_v3:history'; // 历史记录存储 key
-      const POLL_INTERVAL = 5000; // 轮询间隔 3 秒
+      const POLL_INTERVAL = 3000; // 轮询间隔 3 秒
       const MAX_POLL_ATTEMPTS = 120; // 最大轮询次数 (6分钟)
 
       // 状态变量
@@ -1330,11 +1330,14 @@
         } else {
           ui.historyList.innerHTML = pageItems.map(item => {
             const time = new Date(item.createdAt).toLocaleString();
-            const statusClass = item.status === 'completed' ? 'completed' : (item.status === 'failed' ? 'failed' : 'pending');
-            const statusText = item.status === 'completed' ? '已完成' : (item.status === 'failed' ? '失败' : '处理中...');
-            const thumbHtml = item.imageUrls && item.imageUrls.length > 0
+            // 只有真正完成的才显示completed，其他都当作可刷新
+            const isCompleted = item.status === 'completed' && item.imageUrls && item.imageUrls.length > 0;
+            const statusClass = isCompleted ? 'completed' : (item.status === 'failed' ? 'pending' : 'pending');
+            const statusText = isCompleted ? '已完成' : (item.status === 'failed' ? '超时(可刷新)' : '处理中...');
+            const hasImages = item.imageUrls && item.imageUrls.length > 0;
+            const thumbHtml = hasImages
               ? `<img src="${item.imageUrls[0]}" loading="lazy">`
-              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:12px;">${item.status === "pending" ? "生成中..." : "无图片"}</div>';
+              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:12px;">等待结果...</div>';
 
             return `
               <div class="history-item" data-task-id="${item.taskId}">
@@ -1345,8 +1348,8 @@
                   <div class="history-item-status ${statusClass}">${statusText}</div>
                 </div>
                 <div class="history-item-actions">
-                  ${item.status === 'pending' ? `<button class="history-btn" onclick="refreshHistoryItem('${item.taskId}')">刷新</button>` : ''}
-                  ${item.status === 'completed' && item.imageUrls && item.imageUrls.length > 0 ? `<button class="history-btn" onclick="viewHistoryImages('${item.taskId}')">查看</button>` : ''}
+                  ${!isCompleted ? `<button class="history-btn" onclick="refreshHistoryItem('${item.taskId}')">刷新</button>` : ''}
+                  ${hasImages ? `<button class="history-btn" onclick="viewHistoryImages('${item.taskId}')">查看</button>` : ''}
                 </div>
               </div>
             `;
